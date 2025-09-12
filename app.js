@@ -1,5 +1,4 @@
-// app.js — mobile-friendly UI + Chart.js integration
-// Uses Open-Meteo geocoding + forecast API (no API key)
+// app.js — SkyAgent updated: mobile UI, settings, caching, Chart.js fix
 
 const searchForm = document.getElementById('searchForm');
 const cityInput = document.getElementById('cityInput');
@@ -17,8 +16,25 @@ const currentHum = document.getElementById('currentHum');
 const forecastEl = document.getElementById('forecast');
 const chartCard = document.getElementById('chartCard');
 const hourlyCanvas = document.getElementById('hourlyChart');
+const chartRange = document.getElementById('chartRange');
+
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsOverlay = document.getElementById('settingsOverlay');
+const saveSettings = document.getElementById('saveSettings');
+const closeSettings = document.getElementById('closeSettings');
 
 let myChart = null;
+let appState = {
+  unit: 'C',    // 'C' or 'F'
+  timeFormat: 24 // 24 or 12
+};
+
+// persist keys
+const LS_KEY = 'skyagent_state_v1';
+const LS_CITY = 'skyagent_lastcity_v1';
+
+loadStateFromStorage();
+wireSettingsUI();
 
 searchForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -26,6 +42,44 @@ searchForm.addEventListener('submit', async (e) => {
   if (!q) return showStatus('Please enter a city name.');
   await lookupAndRender(q);
 });
+
+settingsBtn.addEventListener('click', () => {
+  openSettings();
+});
+closeSettings.addEventListener('click', () => hideSettings());
+saveSettings.addEventListener('click', () => {
+  // read selections
+  const unitBtn = document.querySelector('.unit-btn.active');
+  const timeBtn = document.querySelector('.time-btn.active');
+  if (unitBtn) appState.unit = unitBtn.dataset.unit;
+  if (timeBtn) appState.timeFormat = parseInt(timeBtn.dataset.time, 10);
+  saveStateToStorage();
+  hideSettings();
+  // if we have data loaded, re-render with new units
+  const lastCity = localStorage.getItem(LS_CITY);
+  if (lastCity) lookupAndRender(lastCity);
+});
+
+function wireSettingsUI(){
+  // initialize buttons
+  document.querySelectorAll('.unit-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.unit-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    });
+    if (b.dataset.unit === appState.unit) b.classList.add('active');
+  });
+  document.querySelectorAll('.time-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.time-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    });
+    if (String(b.dataset.time) === String(appState.timeFormat)) b.classList.add('active');
+  });
+}
+
+function openSettings(){ settingsOverlay.classList.remove('hidden'); }
+function hideSettings(){ settingsOverlay.classList.add('hidden'); }
 
 function showStatus(msg, isError = false){
   statusEl.textContent = msg;
@@ -40,13 +94,15 @@ async function lookupAndRender(query){
     if (!geo) { showStatus('City not found', true); return; }
 
     showStatus(`Found: ${geo.name}, ${geo.country}`);
-    // Fetch forecast
+    // save last search
+    localStorage.setItem(LS_CITY, query);
+
     const forecast = await fetchForecast(geo.latitude, geo.longitude);
     if (!forecast) { showStatus('Forecast unavailable', true); return; }
 
     renderCurrent(geo, forecast);
     renderForecastCards(forecast);
-    renderHourlyChart(forecast);
+    renderHourlyChart(forecast, geo);
     showStatus('Showing latest forecast');
   }catch(err){
     console.error(err);
@@ -66,7 +122,6 @@ async function geocode(q){
   if (!res.ok) throw new Error('Geocode failed');
   const data = await res.json();
   if (!data.results || data.results.length === 0) return null;
-  // pick first reasonable result (prefer population)
   const first = data.results[0];
   return {
     name: first.name,
@@ -78,7 +133,6 @@ async function geocode(q){
 }
 
 async function fetchForecast(lat, lon){
-  // Request hourly + daily data. You can tweak parameters to include more variables.
   const params = [
     'hourly=temperature_2m,apparent_temperature,precipitation,weathercode,windspeed_10m,relativehumidity_2m',
     'daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode',
@@ -91,21 +145,19 @@ async function fetchForecast(lat, lon){
 }
 
 function renderCurrent(geo, data){
-  // Use the first hourly point as "current" approximation
-  const tz = data.timezone || 'UTC';
-  const nowIdx = 0;
-  const t = data.hourly.temperature_2m[nowIdx];
-  const wind = data.hourly.windspeed_10m[nowIdx];
-  const precip = data.hourly.precipitation[nowIdx] ?? 0;
-  const hum = data.hourly.relativehumidity_2m ? data.hourly.relativehumidity_2m[nowIdx] : '-';
-  const code = data.hourly.weathercode[nowIdx];
+  // approximate "current" with the first hourly item
+  const t = data.hourly.temperature_2m[0];
+  const wind = data.hourly.windspeed_10m[0];
+  const precip = data.hourly.precipitation[0] ?? 0;
+  const hum = data.hourly.relativehumidity_2m ? data.hourly.relativehumidity_2m[0] : '-';
+  const code = data.hourly.weathercode[0];
 
   currentCity.textContent = `${geo.name}, ${geo.country}`;
-  currentTemp.textContent = `${Math.round(t)}°C`;
+  currentTemp.textContent = `${formatTemp(t)}`;
   currentDesc.textContent = getWeatherLabel(code);
-  currentIcon.textContent = getWeatherIcon(code);
-  currentWind.textContent = `${wind ?? '—'} m/s`;
-  currentPrecip.textContent = `${precip ?? '—'} mm`;
+  setIconForCode(currentIcon, code);
+  currentWind.textContent = `${Math.round(wind ?? 0)} m/s`;
+  currentPrecip.textContent = `${precip ?? 0} mm`;
   currentHum.textContent = `${hum ?? '—'}%`;
 
   currentCard.classList.remove('hidden');
@@ -128,8 +180,8 @@ function renderForecastCards(data){
     node.className = 'fcard';
     node.innerHTML = `
       <div class="day">${dayName}</div>
-      <div class="icon">${getWeatherIcon(wcode)}</div>
-      <div class="t">${Math.round(tmax)}° / ${Math.round(tmin)}°</div>
+      <div class="icon small">${getWeatherSVG(wcode)}</div>
+      <div class="t">${formatTemp(tmax)} / ${formatTemp(tmin)}</div>
       <div class="muted small">Precip: ${precip ?? 0} mm</div>
     `;
     forecastEl.appendChild(node);
@@ -137,87 +189,142 @@ function renderForecastCards(data){
   forecastEl.classList.remove('hidden');
 }
 
-function renderHourlyChart(data){
-  // Prepare hourly temperature for next 48 hours
+function renderHourlyChart(data, geo){
+  // prepare data points (limit to next 48)
   const times = data.hourly.time || [];
   const temps = data.hourly.temperature_2m || [];
   const winds = data.hourly.windspeed_10m || [];
 
-  // limit to next 48 points for readability
   const maxPoints = Math.min(times.length, 48);
-  const labels = times.slice(0, maxPoints).map(t => {
+  const sliceTimes = times.slice(0, maxPoints);
+  const sliceTemps = temps.slice(0, maxPoints);
+  const sliceWinds = winds.slice(0, maxPoints);
+
+  // labels depending on time format
+  const labels = sliceTimes.map(t => {
     const dt = new Date(t);
-    return dt.toLocaleString(undefined, {hour:'numeric', hour12:false});
+    if (appState.timeFormat === 12) {
+      return dt.toLocaleString(undefined, {hour: 'numeric', hour12: true});
+    } else {
+      return dt.toLocaleString(undefined, {hour: 'numeric', hour12: false});
+    }
   });
-  const tdata = temps.slice(0, maxPoints);
-  const wdata = winds.slice(0, maxPoints);
 
-  // destroy old chart
-  if (myChart) myChart.destroy();
+  // Chart.js: destroy old chart to avoid double-initialization
+  if (myChart) {
+    try { myChart.destroy(); } catch(e){ console.warn('destroy chart error', e); }
+    myChart = null;
+  }
 
-  myChart = new Chart(hourlyCanvas.getContext('2d'), {
+  // create a single gradient for dataset fill (create once)
+  const ctx = hourlyCanvas.getContext('2d');
+  // Ensure canvas has computed width/height (CSS enforces height)
+  const w = hourlyCanvas.clientWidth;
+  const h = hourlyCanvas.clientHeight;
+  // adjust canvas pixel ratio for crispness
+  const dpr = window.devicePixelRatio || 1;
+  hourlyCanvas.width = Math.floor(w * dpr);
+  hourlyCanvas.height = Math.floor(h * dpr);
+  ctx.scale(dpr, dpr);
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, h);
+  gradient.addColorStop(0, 'rgba(124,196,255,0.20)');
+  gradient.addColorStop(1, 'rgba(124,196,255,0.02)');
+
+  // create chart with stable options (short deterministic animation)
+  myChart = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
       datasets: [
         {
-          label: 'Temperature (°C)',
-          data: tdata,
-          tension: 0.3,
+          label: 'Temperature',
+          data: sliceTemps.map(t => roundOne(convertTemp(t))),
+          tension: 0.25,
           yAxisID: 'y',
           pointRadius: 2,
           borderWidth: 2,
+          borderColor: 'rgba(124,196,255,1)',
+          backgroundColor: gradient,
           fill: true,
-          backgroundColor: (ctx) => {
-            // subtle gradient fill
-            const g = ctx.chart.ctx.createLinearGradient(0,0,0,200);
-            g.addColorStop(0, 'rgba(124,196,255,0.18)');
-            g.addColorStop(1, 'rgba(124,196,255,0.02)');
-            return g;
-          }
         },
         {
           label: 'Wind (m/s)',
-          data: wdata,
-          tension: 0.3,
+          data: sliceWinds.map(w => roundOne(w)),
+          tension: 0.25,
           yAxisID: 'y1',
           pointRadius: 0,
           borderDash: [4,4],
-          borderWidth: 1.5
+          borderWidth: 1.5,
+          borderColor: 'rgba(190,190,190,0.9)',
+          fill: false,
         }
       ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: {
+        duration: 350, // short and finite -> prevents continuous animation loops
+        easing: 'easeOutCubic'
+      },
       interaction: {mode: 'index', intersect: false},
       plugins: {
         legend: { position: 'top', labels:{boxWidth:12} },
-        tooltip: { enabled: true }
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            label: ctx => {
+              const label = ctx.dataset.label || '';
+              if (label.includes('Temperature')) return `${label}: ${ctx.formattedValue} ${appState.unit === 'C' ? '°C' : '°F'}`;
+              return `${label}: ${ctx.formattedValue}`;
+            }
+          }
+        }
       },
       scales: {
-        x: { display:true },
+        x: {
+          display: true,
+          ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+        },
         y: {
           type: 'linear',
           display: true,
           position: 'left',
-          title: { display:true, text:'°C' }
+          title: { display:true, text: `°${appState.unit}` }
         },
         y1: {
           type: 'linear',
           display: true,
           position: 'right',
           grid: { drawOnChartArea: false },
-          title: { display:true, text:'m/s' }
+          title: { display:true, text:'m/s' },
+          ticks: { maxTicksLimit: 5 }
         }
-      }
+      },
+      layout: { padding: { top: 6, left: 6, right: 6, bottom: 6 } }
     }
   });
+
+  // Chart range text
+  const start = new Date(sliceTimes[0]);
+  const end = new Date(sliceTimes[sliceTimes.length - 1]);
+  chartRange.textContent = `${start.toLocaleString(undefined, {hour: 'numeric'})} — ${end.toLocaleString(undefined, {hour: 'numeric'})}`;
 
   chartCard.classList.remove('hidden');
 }
 
-// small helper: map Open-Meteo weather codes to simple labels/icons
+function formatTemp(v){
+  if (v === null || v === undefined) return '—';
+  const n = convertTemp(v);
+  return `${Math.round(n)}°${appState.unit}`;
+}
+function convertTemp(celsius){
+  if (appState.unit === 'C') return celsius;
+  return celsius * 9/5 + 32;
+}
+function roundOne(n){ return Math.round(n*10)/10; }
+
 function getWeatherLabel(code){
   const map = {
     0: 'Clear sky',
@@ -239,21 +346,62 @@ function getWeatherLabel(code){
   };
   return map[code] || 'Weather';
 }
-
-function getWeatherIcon(code){
-  // Emoji-based icons for simplicity — swap with SVGs if you prefer
-  if (code === 0) return '☀️';
-  if (code === 1 || code === 2) return '🌤️';
-  if (code === 3) return '☁️';
-  if (code >= 45 && code <= 48) return '🌫️';
-  if ((code >= 51 && code <= 57) || (code >= 61 && code <= 65) || (code >= 80 && code <= 82)) return '🌧️';
-  if (code >= 95) return '⛈️';
-  return '🌤️';
+function getWeatherSVG(code){
+  if (code === 0) return `<svg class="icon-use"><use href="#sun"></use></svg>`;
+  if (code === 1 || code === 2) return `<svg class="icon-use"><use href="#sun"></use></svg>`;
+  if (code === 3) return `<svg class="icon-use"><use href="#cloud"></use></svg>`;
+  if (code >= 45 && code <= 48) return `<svg class="icon-use"><use href="#fog"></use></svg>`;
+  if ((code >= 51 && code <= 57) || (code >= 61 && code <= 65) || (code >= 80 && code <= 82)) return `<svg class="icon-use"><use href="#rain"></use></svg>`;
+  if (code >= 95) return `<svg class="icon-use"><use href="#storm"></use></svg>`;
+  return `<svg class="icon-use"><use href="#sun"></use></svg>`;
+}
+function setIconForCode(el, code){
+  el.innerHTML = getWeatherSVG(code);
+  // ensure svg gets accent fill
+  const svg = el.querySelector('svg');
+  if (svg) svg.classList.add('icon-use');
 }
 
-// On load, try a default city
+// storage helpers
+function saveStateToStorage(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(appState)); } catch(e){ console.warn('ls save failed', e); }
+}
+function loadStateFromStorage(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s.unit) appState.unit = s.unit;
+      if (s.timeFormat) appState.timeFormat = s.timeFormat;
+    }
+  }catch(e){ /* ignore */ }
+}
+
+function loadStateFromStorage(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s.unit) appState.unit = s.unit;
+      if (s.timeFormat) appState.timeFormat = s.timeFormat;
+    }
+  }catch(e){}
+}
+
+// on load, restore last city and state
 window.addEventListener('load', () => {
-  // If you want an initial city, set it here:
-  // cityInput.value = 'Beirut';
-  // lookupAndRender('Beirut');
+  // apply saved state to UI
+  document.querySelectorAll('.unit-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.unit === appState.unit);
+  });
+  document.querySelectorAll('.time-btn').forEach(b => {
+    b.classList.toggle('active', String(b.dataset.time) === String(appState.timeFormat));
+  });
+
+  const lastCity = localStorage.getItem(LS_CITY);
+  if (lastCity) {
+    cityInput.value = lastCity;
+    // fetch automatically
+    lookupAndRender(lastCity).catch(()=>{});
+  }
 });
