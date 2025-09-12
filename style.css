@@ -10,7 +10,7 @@
 }
 
 *{box-sizing:border-box}
-html,body,#app{height:100%}
+html,body{height:100%}
 body{
   margin:0;
   background: linear-gradient(180deg,#071025 0%, #081226 60%);
@@ -25,7 +25,7 @@ body{
 
 .app{
   width:100%;
-  max-width:980px;
+  max-width:1100px;
 }
 
 /* Topbar */
@@ -41,6 +41,7 @@ body{
   font-size:1.2rem;
   letter-spacing:0.6px;
 }
+.controls{display:flex; gap:10px; align-items:center}
 .search{
   display:flex;
   gap:8px;
@@ -64,15 +65,31 @@ body{
   font-weight:600;
   cursor:pointer;
 }
+.icon-btn{
+  padding:8px 10px;
+  border-radius:10px;
+  border:0;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+}
 
 /* status */
 .status{font-size:0.95rem; color:var(--muted); margin-bottom:12px}
 
 /* Grid layout */
 .grid{
-  display:grid;
-  grid-template-columns: 1fr;
+  display:flex;
+  flex-direction:column;
   gap:var(--gap);
+}
+
+/* two columns on wide screens */
+.left-col, .right-col{display:block}
+@media (min-width:900px){
+  .grid{flex-direction:row}
+  .left-col{flex:0 0 420px}
+  .right-col{flex:1}
 }
 
 /* Cards */
@@ -85,12 +102,16 @@ body{
 }
 .current .row{display:flex; gap:12px; align-items:center}
 .icon{font-size:48px; width:72px; height:72px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02); border-radius:12px}
+.icon svg{width:42px; height:42px; fill:var(--accent)}
 .details h2{margin:0; font-size:1.05rem}
 .temp{font-size:1.6rem; font-weight:700}
 .muted{color:var(--muted)}
-.metrics{display:flex; gap:12px; margin-top:10px; font-size:0.9rem; color:var(--muted)}
+.metrics{display:flex; gap:12px; margin-top:10px; font-size:0.9rem; color:var(--muted); flex-wrap:wrap}
 
-.chart-card canvas{width:100% !important; height:auto !important}
+.chart-card{ display:flex; flex-direction:column; gap:8px; }
+.chart-head{display:flex; justify-content:space-between; align-items:center}
+.chart-wrap{ width:100%; height:240px; position:relative } /* fixed height to prevent layout shifts */
+.chart-wrap canvas{width:100% !important; height:100% !important; display:block}
 
 /* Forecast cards */
 .forecast{
@@ -98,6 +119,7 @@ body{
   gap:10px;
   overflow:auto;
   padding-bottom:6px;
+  margin-top:12px;
 }
 .fcard{
   min-width:140px;
@@ -111,19 +133,3 @@ body{
   background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));
   border:1px solid rgba(255,255,255,0.02);
   text-align:center;
-}
-.fcard .day{font-weight:700}
-.fcard .t{font-size:1.1rem}
-
-/* Footer */
-.footer{margin-top:16px; color:var(--muted); font-size:0.85rem}
-
-/* hidden helper */
-.hidden{display:none !important}
-
-/* Larger screens: two-column layout */
-@media (min-width:820px){
-  .grid{grid-template-columns: 420px 1fr; align-items:start}
-  .forecast{flex-direction:column; gap:12px; overflow:visible}
-  .chart-card{height:100%}
-}
