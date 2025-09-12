@@ -1,33 +1,63 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>SkyAgent Weather</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body { font-family: Arial, sans-serif; background: #f5faff; color: #222; margin:0; padding:2rem;}
-    form { margin-bottom: 2rem; }
-    input[type="text"] { padding: 0.5rem; font-size: 1rem; width: 200px; }
-    button { padding: 0.5rem 1rem; font-size: 1rem; }
-    .weather-icon { width: 48px; height: 48px; vertical-align: middle; }
-    .forecast-card {
-      display:inline-block; border:1px solid #ddd; margin:5px; padding:10px;
-      border-radius:8px; background:#fff; min-width:150px; text-align:center;
-    }
-    #cityInfo, #weatherSummary { margin-bottom: 1rem; }
-    #forecastCards { margin-bottom: 2rem; }
-    canvas { background: #fff; border-radius: 10px; box-shadow: 0 1px 6px #0002;}
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SkyAgent — Weather</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Simple icons for weather (we'll map Open-Meteo codes to icons) -->
+  <!-- Replace/extend icons as you like -->
+  <link rel="stylesheet" href="style.css" />
+
 </head>
 <body>
-  <form id="searchForm">
-    <input type="text" id="cityInput" placeholder="Enter city" />
-    <button type="submit">Search</button>
-  </form>
-  <div id="cityInfo"></div>
-  <div id="weatherSummary"></div>
-  <div id="forecastCards"></div>
-  <canvas id="forecastChart" width="700" height="400"></canvas>
+  <main class="app">
+    <header class="topbar">
+      <h1>SkyAgent</h1>
+      <form id="searchForm" class="search">
+        <input id="cityInput" placeholder="Enter city (e.g. Beirut)" autocomplete="off" />
+        <button type="submit">Search</button>
+      </form>
+    </header>
+
+    <section id="status" class="status">Enter a city and press Search</section>
+
+    <section class="grid">
+      <!-- Current conditions -->
+      <article id="current" class="card current hidden">
+        <div class="row">
+          <div class="icon" id="currentIcon">☀️</div>
+          <div class="details">
+            <h2 id="currentCity">—</h2>
+            <div class="temp" id="currentTemp">—°C</div>
+            <div id="currentDesc" class="muted">—</div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div>Wind: <span id="currentWind">— m/s</span></div>
+          <div>Precip: <span id="currentPrecip">— mm</span></div>
+          <div>Humidity: <span id="currentHum">—</span></div>
+        </div>
+      </article>
+
+      <!-- Chart area -->
+      <article class="card chart-card hidden" id="chartCard">
+        <h3>Hourly forecast</h3>
+        <canvas id="hourlyChart" height="120"></canvas>
+      </article>
+
+      <!-- 3-day forecast -->
+      <section id="forecast" class="forecast hidden"></section>
+    </section>
+
+    <footer class="footer muted">
+      Data provided by Open-Meteo — no API key required.
+    </footer>
+  </main>
+
   <script src="app.js"></script>
 </body>
 </html>
