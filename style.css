@@ -1,135 +1,85 @@
 :root{
-  --bg:#0f1724;
+  --bg:#071025;
   --card:#0b1117;
   --accent:#7cc4ff;
   --muted:#9aa6b2;
   --glass: rgba(255,255,255,0.03);
   --gap: 14px;
-  --radius:14px;
+  --radius:12px;
   font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  color-scheme: dark;
 }
-
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
   margin:0;
+  min-height:100vh;
   background: linear-gradient(180deg,#071025 0%, #081226 60%);
   color:#e6eef6;
   -webkit-font-smoothing:antialiased;
   padding:18px;
-  min-height:100vh;
   display:flex;
   align-items:flex-start;
   justify-content:center;
 }
 
-.app{
-  width:100%;
-  max-width:1100px;
-}
+.app{width:100%; max-width:1100px}
 
-/* Topbar */
-.topbar{
-  display:flex;
-  gap:var(--gap);
-  align-items:center;
-  justify-content:space-between;
-  margin-bottom:12px;
-}
-.topbar h1{
-  margin:0;
-  font-size:1.2rem;
-  letter-spacing:0.6px;
-}
+/* top */
+.topbar{display:flex; gap:var(--gap); align-items:center; justify-content:space-between; margin-bottom:12px}
+.topbar h1{margin:0; font-size:1.2rem}
 .controls{display:flex; gap:10px; align-items:center}
-.search{
-  display:flex;
-  gap:8px;
-}
+
+.search{display:flex; gap:8px}
 .search input{
-  padding:8px 10px;
-  border-radius:10px;
-  background:var(--glass);
-  border:1px solid rgba(255,255,255,0.04);
-  color:var(--muted);
-  min-width:160px;
-  outline:none;
+  padding:8px 10px; border-radius:10px; background:var(--glass);
+  border:1px solid rgba(255,255,255,0.03); color:var(--muted); min-width:160px; outline:none;
 }
-.search input:focus{color:inherit; border-color:rgba(124,196,255,0.25)}
-.search button{
-  padding:8px 12px;
-  border-radius:10px;
-  border:0;
-  background:linear-gradient(90deg,var(--accent),#5ab0ff);
-  color:#042033;
-  font-weight:600;
-  cursor:pointer;
-}
-.icon-btn{
-  padding:8px 10px;
-  border-radius:10px;
-  border:0;
-  background:transparent;
-  color:var(--muted);
-  cursor:pointer;
-}
+.search button{ padding:8px 12px; border-radius:10px; border:0; background:linear-gradient(90deg,var(--accent),#5ab0ff); color:#042033; font-weight:600; cursor:pointer}
+.icon-btn{padding:8px; border-radius:8px; border:0; background:transparent; cursor:pointer; color:var(--muted)}
 
 /* status */
 .status{font-size:0.95rem; color:var(--muted); margin-bottom:12px}
 
-/* Grid layout */
-.grid{
-  display:flex;
-  flex-direction:column;
-  gap:var(--gap);
-}
-
-/* two columns on wide screens */
+/* grid */
+.grid{display:flex; flex-direction:column; gap:var(--gap)}
 .left-col, .right-col{display:block}
-@media (min-width:900px){
-  .grid{flex-direction:row}
-  .left-col{flex:0 0 420px}
-  .right-col{flex:1}
-}
+@media (min-width:900px){ .grid{flex-direction:row} .left-col{flex:0 0 420px} .right-col{flex:1} }
 
-/* Cards */
-.card{
-  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-  border-radius:var(--radius);
-  padding:12px;
-  box-shadow: 0 6px 18px rgba(2,6,12,0.6);
-  border:1px solid rgba(255,255,255,0.03);
-}
+/* card */
+.card{background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:var(--radius); padding:12px; box-shadow:0 6px 18px rgba(2,6,12,0.6); border:1px solid rgba(255,255,255,0.03)}
 .current .row{display:flex; gap:12px; align-items:center}
-.icon{font-size:48px; width:72px; height:72px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02); border-radius:12px}
+.icon{width:72px; height:72px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02); border-radius:12px}
 .icon svg{width:42px; height:42px; fill:var(--accent)}
 .details h2{margin:0; font-size:1.05rem}
 .temp{font-size:1.6rem; font-weight:700}
 .muted{color:var(--muted)}
 .metrics{display:flex; gap:12px; margin-top:10px; font-size:0.9rem; color:var(--muted); flex-wrap:wrap}
 
-.chart-card{ display:flex; flex-direction:column; gap:8px; }
+/* chart */
+.chart-card{display:flex; flex-direction:column; gap:8px}
 .chart-head{display:flex; justify-content:space-between; align-items:center}
-.chart-wrap{ width:100%; height:240px; position:relative } /* fixed height to prevent layout shifts */
+.chart-wrap{width:100%; height:260px; position:relative}
 .chart-wrap canvas{width:100% !important; height:100% !important; display:block}
 
-/* Forecast cards */
-.forecast{
-  display:flex;
-  gap:10px;
-  overflow:auto;
-  padding-bottom:6px;
-  margin-top:12px;
-}
-.fcard{
-  min-width:140px;
-  flex:0 0 140px;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  align-items:center;
-  padding:10px;
-  border-radius:12px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));
-  border:1px solid rgba(255,255,255,0.02);
-  text-align:center;
+/* forecast */
+.forecast{display:flex; gap:10px; overflow:auto; padding-bottom:6px; margin-top:12px}
+.fcard{min-width:140px; flex:0 0 140px; display:flex; flex-direction:column; gap:8px; align-items:center; padding:10px; border-radius:12px; background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02)); border:1px solid rgba(255,255,255,0.02); text-align:center}
+.fcard .day{font-weight:700}
+.fcard .t{font-size:1.1rem}
+
+/* footer */
+.footer{margin-top:16px; color:var(--muted); font-size:0.85rem}
+
+/* hidden helper */
+.hidden{display:none !important}
+
+/* overlay */
+.overlay{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(1,4,8,0.5); z-index:80}
+.overlay-card{width:320px; background:var(--card); padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.03)}
+.setting{margin:10px 0}
+.btn-group{display:flex; gap:8px}
+.unit-btn, .time-btn{flex:1; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); background:transparent; color:var(--muted); cursor:pointer}
+.unit-btn.active, .time-btn.active{background:linear-gradient(90deg,var(--accent),#5ab0ff); color:#042033; border:0}
+.primary{background:linear-gradient(90deg,var(--accent),#5ab0ff); border:0; color:#042033; padding:8px 10px; border-radius:8px; cursor:pointer}
+.small{font-size:0.9rem}
