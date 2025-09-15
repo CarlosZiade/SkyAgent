@@ -5,24 +5,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>SkyAgent — Weather</title>
 
-  <!-- Chart.js CDN -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-
-  <!-- Inline SVG sprite (small) -->
-  <style id="svg-sprite" type="text/css">
-    /* nothing here — sprite is inline below for convenience */
-  </style>
 
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- SVG sprite -->
+  <!-- Minimal inline SVG sprite for icons -->
   <svg style="display:none" aria-hidden="true">
-    <symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><g/></symbol>
-    <symbol id="cloud" viewBox="0 0 24 24"><path d="M3 15a4 4 0 0 1 4-4h1.5A5.5 5.5 0 0 1 20 13.5 4 4 0 0 1 16 18H6a3 3 0 0 1-3-3z"/></symbol>
-    <symbol id="rain" viewBox="0 0 24 24"><path d="M3 16c1-4 4-4 6-4h1"/><path d="M8 20v2M12 20v2M16 20v2"/></symbol>
-    <symbol id="storm" viewBox="0 0 24 24"><path d="M13 2v6l3 1-8 8 1-5-4-1"/></symbol>
-    <symbol id="fog" viewBox="0 0 24 24"><path d="M3 10h18M5 14h14M2 18h20"/></symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></symbol>
+    <symbol id="icon-cloud" viewBox="0 0 24 24"><path d="M3 15a4 4 0 0 1 4-4h1.5A5.5 5.5 0 0 1 20 13.5 4 4 0 0 1 16 18H6a3 3 0 0 1-3-3z"/></symbol>
+    <symbol id="icon-rain" viewBox="0 0 24 24"><path d="M3 16c1-4 4-4 6-4h1"/><path d="M8 20v2M12 20v2M16 20v2"/></symbol>
+    <symbol id="icon-storm" viewBox="0 0 24 24"><path d="M13 2v6l3 1-8 8 1-5-4-1"/></symbol>
+    <symbol id="icon-fog" viewBox="0 0 24 24"><path d="M3 10h18M5 14h14M2 18h20"/></symbol>
   </svg>
 
   <main class="app" id="app">
@@ -31,7 +26,7 @@
 
       <div class="controls">
         <form id="searchForm" class="search" autocomplete="off">
-          <input id="cityInput" placeholder="Enter city (e.g. Beirut)" />
+          <input id="cityInput" placeholder="City (e.g. Beirut)" aria-label="City name" />
           <button type="submit" aria-label="Search">Search</button>
         </form>
 
@@ -39,14 +34,13 @@
       </div>
     </header>
 
-    <section id="status" class="status">Enter a city and press Search</section>
+    <div id="status" class="status">Type a city and press Search</div>
 
     <section class="grid">
-      <!-- Left column: current + forecast -->
       <div class="left-col">
-        <article id="current" class="card current hidden" role="region" aria-label="Current weather">
+        <article id="current" class="card current hidden" aria-live="polite">
           <div class="row">
-            <div class="icon" id="currentIcon" aria-hidden="true"><svg class="icon-use"><use href="#sun"></use></svg></div>
+            <div class="icon" id="currentIcon" aria-hidden="true"><svg class="icon-use"><use href="#icon-sun"></use></svg></div>
             <div class="details">
               <h2 id="currentCity">—</h2>
               <div class="temp" id="currentTemp">—°C</div>
@@ -54,7 +48,61 @@
             </div>
           </div>
           <div class="metrics">
-            <div>Wind: <span id="currentWind">— m/s</span></div>
-            <div>Precip: <span id="currentPrecip">— mm</span></div>
+            <div>Wind: <span id="currentWind">—</span></div>
+            <div>Precip: <span id="currentPrecip">—</span></div>
             <div>Humidity: <span id="currentHum">—</span></div>
           </div>
+        </article>
+
+        <section id="forecast" class="forecast hidden" aria-label="3 day forecast"></section>
+      </div>
+
+      <div class="right-col">
+        <article class="card chart-card hidden" id="chartCard">
+          <div class="chart-head">
+            <h3>Hourly</h3>
+            <div class="muted small" id="chartRange">—</div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="hourlyChart" aria-label="Hourly temperature and wind chart"></canvas>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <footer class="footer muted">
+      Data: Open-Meteo (no API key).
+    </footer>
+  </main>
+
+  <!-- Settings overlay -->
+  <div id="settingsOverlay" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="overlay-card">
+      <h3>Settings</h3>
+
+      <div class="setting">
+        <label>Temperature unit</label>
+        <div class="btn-group">
+          <button class="unit-btn" data-unit="C">°C</button>
+          <button class="unit-btn" data-unit="F">°F</button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <label>Time format</label>
+        <div class="btn-group">
+          <button class="time-btn" data-time="24">24h</button>
+          <button class="time-btn" data-time="12">12h</button>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="saveSettings" class="primary">Save</button>
+        <button id="closeSettings" class="muted">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
