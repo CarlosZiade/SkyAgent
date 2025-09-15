@@ -1,262 +1,283 @@
-// app.js — SkyAgent updated: mobile UI, settings, caching, Chart.js fix
+/* app.js — SkyAgent vanilla rewrite
+   Features:
+   - Search (Open-Meteo geocoding + forecast)
+   - Current conditions widget
+   - 3-day forecast cards
+   - Hourly chart (Chart.js) — fixed: creates gradient once, destroys old chart, sets canvas pixel ratio
+   - Settings: °C/°F and 12h/24h, saved to localStorage
+   - Last city cached
+*/
 
-const searchForm = document.getElementById('searchForm');
-const cityInput = document.getElementById('cityInput');
-const statusEl = document.getElementById('status');
-
-const currentCard = document.getElementById('current');
-const currentCity = document.getElementById('currentCity');
-const currentTemp = document.getElementById('currentTemp');
-const currentDesc = document.getElementById('currentDesc');
-const currentIcon = document.getElementById('currentIcon');
-const currentWind = document.getElementById('currentWind');
-const currentPrecip = document.getElementById('currentPrecip');
-const currentHum = document.getElementById('currentHum');
-
-const forecastEl = document.getElementById('forecast');
-const chartCard = document.getElementById('chartCard');
-const hourlyCanvas = document.getElementById('hourlyChart');
-const chartRange = document.getElementById('chartRange');
-
-const settingsBtn = document.getElementById('settingsBtn');
-const settingsOverlay = document.getElementById('settingsOverlay');
-const saveSettings = document.getElementById('saveSettings');
-const closeSettings = document.getElementById('closeSettings');
-
-let myChart = null;
-let appState = {
-  unit: 'C',    // 'C' or 'F'
-  timeFormat: 24 // 24 or 12
+const DOM = {
+  searchForm: document.getElementById('searchForm'),
+  cityInput: document.getElementById('cityInput'),
+  status: document.getElementById('status'),
+  currentCard: document.getElementById('current'),
+  currentCity: document.getElementById('currentCity'),
+  currentTemp: document.getElementById('currentTemp'),
+  currentDesc: document.getElementById('currentDesc'),
+  currentIcon: document.getElementById('currentIcon'),
+  currentWind: document.getElementById('currentWind'),
+  currentPrecip: document.getElementById('currentPrecip'),
+  currentHum: document.getElementById('currentHum'),
+  forecast: document.getElementById('forecast'),
+  chartCard: document.getElementById('chartCard'),
+  hourlyCanvas: document.getElementById('hourlyChart'),
+  chartRange: document.getElementById('chartRange'),
+  settingsBtn: document.getElementById('settingsBtn'),
+  settingsOverlay: document.getElementById('settingsOverlay'),
+  saveSettings: document.getElementById('saveSettings'),
+  closeSettings: document.getElementById('closeSettings')
 };
 
-// persist keys
-const LS_KEY = 'skyagent_state_v1';
-const LS_CITY = 'skyagent_lastcity_v1';
+const LS_STATE = 'skyagent_state_v2';
+const LS_LASTCITY = 'skyagent_lastcity_v2';
 
-loadStateFromStorage();
-wireSettingsUI();
+let chartInstance = null;
+let appState = { unit: 'C', timeFormat: 24 };
 
-searchForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const q = cityInput.value.trim();
-  if (!q) return showStatus('Please enter a city name.');
-  await lookupAndRender(q);
-});
+init();
 
-settingsBtn.addEventListener('click', () => {
-  openSettings();
-});
-closeSettings.addEventListener('click', () => hideSettings());
-saveSettings.addEventListener('click', () => {
-  // read selections
-  const unitBtn = document.querySelector('.unit-btn.active');
-  const timeBtn = document.querySelector('.time-btn.active');
-  if (unitBtn) appState.unit = unitBtn.dataset.unit;
-  if (timeBtn) appState.timeFormat = parseInt(timeBtn.dataset.time, 10);
-  saveStateToStorage();
-  hideSettings();
-  // if we have data loaded, re-render with new units
-  const lastCity = localStorage.getItem(LS_CITY);
-  if (lastCity) lookupAndRender(lastCity);
-});
+function init(){
+  loadState();
+  wireUI();
+  const last = localStorage.getItem(LS_LASTCITY);
+  if (last) {
+    DOM.cityInput.value = last;
+    lookupAndRender(last).catch(e=>console.warn('initial fetch error', e));
+  }
+}
 
-function wireSettingsUI(){
-  // initialize buttons
+function wireUI(){
+  if (!DOM.searchForm || !DOM.cityInput) {
+    console.error('Missing DOM elements for search.');
+    return;
+  }
+
+  DOM.searchForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const q = DOM.cityInput.value.trim();
+    if (!q) return showStatus('Please enter a city name.');
+    await lookupAndRender(q);
+  });
+
+  DOM.settingsBtn?.addEventListener('click', () => DOM.settingsOverlay.classList.remove('hidden'));
+  DOM.closeSettings?.addEventListener('click', () => DOM.settingsOverlay.classList.add('hidden'));
+  DOM.saveSettings?.addEventListener('click', () => {
+    applySettingsFromUI();
+    saveState();
+    DOM.settingsOverlay.classList.add('hidden');
+    // re-render with new units if we have a last city
+    const last = localStorage.getItem(LS_LASTCITY);
+    if (last) lookupAndRender(last).catch(()=>{});
+  });
+
+  // settings buttons (unit/time)
   document.querySelectorAll('.unit-btn').forEach(b => {
     b.addEventListener('click', () => {
-      document.querySelectorAll('.unit-btn').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.unit-btn').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
     });
     if (b.dataset.unit === appState.unit) b.classList.add('active');
   });
   document.querySelectorAll('.time-btn').forEach(b => {
     b.addEventListener('click', () => {
-      document.querySelectorAll('.time-btn').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.time-btn').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
     });
     if (String(b.dataset.time) === String(appState.timeFormat)) b.classList.add('active');
   });
 }
 
-function openSettings(){ settingsOverlay.classList.remove('hidden'); }
-function hideSettings(){ settingsOverlay.classList.add('hidden'); }
-
-function showStatus(msg, isError = false){
-  statusEl.textContent = msg;
-  statusEl.style.color = isError ? '#ffb4b4' : '';
+/* STATE */
+function loadState(){
+  try {
+    const raw = localStorage.getItem(LS_STATE);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s.unit) appState.unit = s.unit;
+      if (s.timeFormat) appState.timeFormat = s.timeFormat;
+    }
+  } catch(e){ console.warn('loadState error', e); }
+}
+function saveState(){
+  try{ localStorage.setItem(LS_STATE, JSON.stringify(appState)); }
+  catch(e){ console.warn('saveState error', e); }
+}
+function applySettingsFromUI(){
+  const activeUnit = document.querySelector('.unit-btn.active');
+  const activeTime = document.querySelector('.time-btn.active');
+  if (activeUnit) appState.unit = activeUnit.dataset.unit;
+  if (activeTime) appState.timeFormat = parseInt(activeTime.dataset.time, 10);
 }
 
+/* UI helpers */
+function showStatus(msg, isError=false){
+  DOM.status.textContent = msg;
+  DOM.status.style.color = isError ? '#ffb4b4' : '';
+}
+function hideAll(){ DOM.currentCard.classList.add('hidden'); DOM.forecast.classList.add('hidden'); DOM.chartCard.classList.add('hidden'); }
+
+/* MAIN flow */
 async function lookupAndRender(query){
   showStatus('Searching…');
   hideAll();
   try{
-    const geo = await geocode(query);
-    if (!geo) { showStatus('City not found', true); return; }
+    const place = await geocode(query);
+    if (!place) { showStatus('City not found', true); return; }
 
-    showStatus(`Found: ${geo.name}, ${geo.country}`);
-    // save last search
-    localStorage.setItem(LS_CITY, query);
+    showStatus(`Found: ${place.name}, ${place.country}`);
+    localStorage.setItem(LS_LASTCITY, query);
 
-    const forecast = await fetchForecast(geo.latitude, geo.longitude);
+    const forecast = await fetchForecast(place.latitude, place.longitude);
     if (!forecast) { showStatus('Forecast unavailable', true); return; }
 
-    renderCurrent(geo, forecast);
-    renderForecastCards(forecast);
-    renderHourlyChart(forecast, geo);
-    showStatus('Showing latest forecast');
+    renderCurrent(place, forecast);
+    renderForecast(forecast);
+    renderHourlyChart(forecast, place);
+    showStatus('Latest forecast shown');
   }catch(err){
-    console.error(err);
-    showStatus('Error fetching weather — try again', true);
+    console.error('lookup error', err);
+    showStatus('Unable to fetch weather. Try again.', true);
   }
 }
 
-function hideAll(){
-  currentCard.classList.add('hidden');
-  forecastEl.classList.add('hidden');
-  chartCard.classList.add('hidden');
-}
-
+/* GEOCODING */
 async function geocode(q){
   const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=5&language=en&format=json`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Geocode failed');
-  const data = await res.json();
-  if (!data.results || data.results.length === 0) return null;
-  const first = data.results[0];
-  return {
-    name: first.name,
-    country: first.country,
-    latitude: first.latitude,
-    longitude: first.longitude,
-    timezone: first.timezone || 'UTC'
-  };
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('geocode failed');
+  const j = await r.json();
+  if (!j.results || j.results.length === 0) return null;
+  const first = j.results[0];
+  return { name: first.name, country: first.country, latitude: first.latitude, longitude: first.longitude, timezone: first.timezone || 'UTC' };
 }
 
+/* FORECAST fetch */
 async function fetchForecast(lat, lon){
+  // Request hourly + daily; timezone=auto lets API return local times
   const params = [
     'hourly=temperature_2m,apparent_temperature,precipitation,weathercode,windspeed_10m,relativehumidity_2m',
     'daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode',
     'timezone=auto'
   ].join('&');
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&${params}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Forecast fetch failed');
-  return res.json();
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('forecast fetch failed');
+  return r.json();
 }
 
-function renderCurrent(geo, data){
-  // approximate "current" with the first hourly item
-  const t = data.hourly.temperature_2m[0];
-  const wind = data.hourly.windspeed_10m[0];
-  const precip = data.hourly.precipitation[0] ?? 0;
-  const hum = data.hourly.relativehumidity_2m ? data.hourly.relativehumidity_2m[0] : '-';
-  const code = data.hourly.weathercode[0];
+/* RENDER current */
+function renderCurrent(place, data){
+  // use first hourly data point as current approximation
+  const t = safeGet(data, ['hourly','temperature_2m',0]);
+  const wind = safeGet(data, ['hourly','windspeed_10m',0]);
+  const precip = safeGet(data, ['hourly','precipitation',0]) ?? 0;
+  const hum = safeGet(data, ['hourly','relativehumidity_2m',0]) ?? '—';
+  const code = safeGet(data, ['hourly','weathercode',0]) ?? 0;
 
-  currentCity.textContent = `${geo.name}, ${geo.country}`;
-  currentTemp.textContent = `${formatTemp(t)}`;
-  currentDesc.textContent = getWeatherLabel(code);
-  setIconForCode(currentIcon, code);
-  currentWind.textContent = `${Math.round(wind ?? 0)} m/s`;
-  currentPrecip.textContent = `${precip ?? 0} mm`;
-  currentHum.textContent = `${hum ?? '—'}%`;
+  DOM.currentCity.textContent = `${place.name}, ${place.country}`;
+  DOM.currentTemp.textContent = formatTemp(t);
+  DOM.currentDesc.textContent = weatherLabel(code);
+  setIcon(DOM.currentIcon, code);
+  DOM.currentWind.textContent = `${Math.round(wind ?? 0)} m/s`;
+  DOM.currentPrecip.textContent = `${precip} mm`;
+  DOM.currentHum.textContent = `${hum}%`;
 
-  currentCard.classList.remove('hidden');
+  DOM.currentCard.classList.remove('hidden');
 }
 
-function renderForecastCards(data){
-  forecastEl.innerHTML = '';
-  const days = data.daily.time || [];
+/* RENDER forecast cards (3 days) */
+function renderForecast(data){
+  DOM.forecast.innerHTML = '';
+  const days = safeGet(data, ['daily','time'], []);
+  const tmax = safeGet(data, ['daily','temperature_2m_max'], []);
+  const tmin = safeGet(data, ['daily','temperature_2m_min'], []);
+  const precip = safeGet(data, ['daily','precipitation_sum'], []);
+  const codes = safeGet(data, ['daily','weathercode'], []);
+
   for (let i=0;i<days.length && i<3;i++){
-    const date = days[i];
-    const tmax = data.daily.temperature_2m_max[i];
-    const tmin = data.daily.temperature_2m_min[i];
-    const precip = data.daily.precipitation_sum ? data.daily.precipitation_sum[i] : 0;
-    const wcode = data.daily.weathercode ? data.daily.weathercode[i] : 0;
-
-    const d = new Date(date);
-    const dayName = d.toLocaleDateString(undefined, {weekday:'short'});
-
+    const date = new Date(days[i]);
+    const dayName = date.toLocaleDateString(undefined, {weekday:'short'});
     const node = document.createElement('div');
     node.className = 'fcard';
     node.innerHTML = `
       <div class="day">${dayName}</div>
-      <div class="icon small">${getWeatherSVG(wcode)}</div>
-      <div class="t">${formatTemp(tmax)} / ${formatTemp(tmin)}</div>
-      <div class="muted small">Precip: ${precip ?? 0} mm</div>
+      <div class="icon small">${svgForCode(codes[i])}</div>
+      <div class="t">${formatTemp(tmax[i])} / ${formatTemp(tmin[i])}</div>
+      <div class="muted small">Precip: ${precip[i] ?? 0} mm</div>
     `;
-    forecastEl.appendChild(node);
+    DOM.forecast.appendChild(node);
   }
-  forecastEl.classList.remove('hidden');
+  DOM.forecast.classList.remove('hidden');
 }
 
-function renderHourlyChart(data, geo){
-  // prepare data points (limit to next 48)
-  const times = data.hourly.time || [];
-  const temps = data.hourly.temperature_2m || [];
-  const winds = data.hourly.windspeed_10m || [];
+/* CHART rendering (fixed and stable) */
+function renderHourlyChart(data, place){
+  const times = safeGet(data, ['hourly','time'], []);
+  const temps = safeGet(data, ['hourly','temperature_2m'], []);
+  const winds = safeGet(data, ['hourly','windspeed_10m'], []);
 
   const maxPoints = Math.min(times.length, 48);
-  const sliceTimes = times.slice(0, maxPoints);
-  const sliceTemps = temps.slice(0, maxPoints);
-  const sliceWinds = winds.slice(0, maxPoints);
+  const tTimes = times.slice(0, maxPoints);
+  const tTemps = temps.slice(0, maxPoints);
+  const tWinds = winds.slice(0, maxPoints);
 
-  // labels depending on time format
-  const labels = sliceTimes.map(t => {
+  const labels = tTimes.map(t => {
     const dt = new Date(t);
-    if (appState.timeFormat === 12) {
-      return dt.toLocaleString(undefined, {hour: 'numeric', hour12: true});
-    } else {
-      return dt.toLocaleString(undefined, {hour: 'numeric', hour12: false});
-    }
+    if (appState.timeFormat === 12) return dt.toLocaleString(undefined, {hour:'numeric', hour12:true});
+    return dt.toLocaleString(undefined, {hour:'numeric', hour12:false});
   });
 
-  // Chart.js: destroy old chart to avoid double-initialization
-  if (myChart) {
-    try { myChart.destroy(); } catch(e){ console.warn('destroy chart error', e); }
-    myChart = null;
+  // destroy previous chart if exists
+  if (chartInstance) {
+    try { chartInstance.destroy(); } catch(e){ console.warn('destroy chart:', e); }
+    chartInstance = null;
   }
 
-  // create a single gradient for dataset fill (create once)
-  const ctx = hourlyCanvas.getContext('2d');
-  // Ensure canvas has computed width/height (CSS enforces height)
-  const w = hourlyCanvas.clientWidth;
-  const h = hourlyCanvas.clientHeight;
-  // adjust canvas pixel ratio for crispness
+  // prepare canvas & pixel ratio
+  const canvas = DOM.hourlyCanvas;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.clientWidth || canvas.parentElement.clientWidth;
+  const h = canvas.clientHeight || 240;
   const dpr = window.devicePixelRatio || 1;
-  hourlyCanvas.width = Math.floor(w * dpr);
-  hourlyCanvas.height = Math.floor(h * dpr);
-  ctx.scale(dpr, dpr);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const gradient = ctx.createLinearGradient(0, 0, 0, h);
-  gradient.addColorStop(0, 'rgba(124,196,255,0.20)');
-  gradient.addColorStop(1, 'rgba(124,196,255,0.02)');
+  // gradient once
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(124,196,255,0.22)');
+  grad.addColorStop(1, 'rgba(124,196,255,0.03)');
 
-  // create chart with stable options (short deterministic animation)
-  myChart = new Chart(ctx, {
+  // convert temps according to unit
+  const convTemps = tTemps.map(x => round1(convertTemp(x)));
+
+  chartInstance = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
       datasets: [
         {
-          label: 'Temperature',
-          data: sliceTemps.map(t => roundOne(convertTemp(t))),
+          label: `Temperature (°${appState.unit})`,
+          data: convTemps,
           tension: 0.25,
           yAxisID: 'y',
           pointRadius: 2,
           borderWidth: 2,
           borderColor: 'rgba(124,196,255,1)',
-          backgroundColor: gradient,
+          backgroundColor: grad,
           fill: true,
         },
         {
           label: 'Wind (m/s)',
-          data: sliceWinds.map(w => roundOne(w)),
+          data: tWinds.map(x => round1(x)),
           tension: 0.25,
           yAxisID: 'y1',
           pointRadius: 0,
           borderDash: [4,4],
           borderWidth: 1.5,
-          borderColor: 'rgba(190,190,190,0.9)',
+          borderColor: 'rgba(200,200,200,0.9)',
           fill: false,
         }
       ]
@@ -264,144 +285,64 @@ function renderHourlyChart(data, geo){
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: {
-        duration: 350, // short and finite -> prevents continuous animation loops
-        easing: 'easeOutCubic'
-      },
+      animation: { duration: 350, easing: 'easeOutCubic' }, // finite animation: prevents looping
       interaction: {mode: 'index', intersect: false},
       plugins: {
         legend: { position: 'top', labels:{boxWidth:12} },
         tooltip: {
-          enabled: true,
           callbacks: {
-            label: ctx => {
-              const label = ctx.dataset.label || '';
-              if (label.includes('Temperature')) return `${label}: ${ctx.formattedValue} ${appState.unit === 'C' ? '°C' : '°F'}`;
-              return `${label}: ${ctx.formattedValue}`;
+            label: function(ctx){
+              if (ctx.dataset.label.includes('Temperature')) return `${ctx.dataset.label}: ${ctx.formattedValue}°${appState.unit}`;
+              return `${ctx.dataset.label}: ${ctx.formattedValue}`;
             }
           }
         }
       },
       scales: {
-        x: {
-          display: true,
-          ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
-        },
-        y: {
-          type: 'linear',
-          display: true,
-          position: 'left',
-          title: { display:true, text: `°${appState.unit}` }
-        },
-        y1: {
-          type: 'linear',
-          display: true,
-          position: 'right',
-          grid: { drawOnChartArea: false },
-          title: { display:true, text:'m/s' },
-          ticks: { maxTicksLimit: 5 }
-        }
+        x: { ticks: { maxRotation:0, autoSkip:true, maxTicksLimit:10 } },
+        y: { type:'linear', position:'left', title: { display:true, text:`°${appState.unit}` } },
+        y1: { type:'linear', position:'right', grid: { drawOnChartArea:false }, title: { display:true, text:'m/s' }, ticks:{ maxTicksLimit:5 } }
       },
-      layout: { padding: { top: 6, left: 6, right: 6, bottom: 6 } }
+      layout: { padding: 6 }
     }
   });
 
-  // Chart range text
-  const start = new Date(sliceTimes[0]);
-  const end = new Date(sliceTimes[sliceTimes.length - 1]);
-  chartRange.textContent = `${start.toLocaleString(undefined, {hour: 'numeric'})} — ${end.toLocaleString(undefined, {hour: 'numeric'})}`;
+  // update chart range text
+  if (tTimes.length > 0) {
+    const s = new Date(tTimes[0]);
+    const e = new Date(tTimes[tTimes.length - 1]);
+    DOM.chartRange.textContent = `${s.toLocaleString(undefined, {hour:'numeric'})} — ${e.toLocaleString(undefined, {hour:'numeric'})}`;
+  } else DOM.chartRange.textContent = '—';
 
-  chartCard.classList.remove('hidden');
+  DOM.chartCard.classList.remove('hidden');
 }
 
-function formatTemp(v){
-  if (v === null || v === undefined) return '—';
-  const n = convertTemp(v);
-  return `${Math.round(n)}°${appState.unit}`;
+/* UTILITIES */
+function safeGet(obj, path, fallback=null){
+  try{
+    return path.reduce((acc,k)=>acc&&acc[k], obj) ?? fallback;
+  } catch(e){ return fallback; }
 }
-function convertTemp(celsius){
-  if (appState.unit === 'C') return celsius;
-  return celsius * 9/5 + 32;
-}
-function roundOne(n){ return Math.round(n*10)/10; }
+function round1(n){ return Math.round(n*10)/10; }
+function convertTemp(c){ return appState.unit === 'C' ? c : (c * 9/5) + 32; }
+function formatTemp(v){ if (v === null || v === undefined) return '—'; return `${Math.round(convertTemp(v))}°${appState.unit}`; }
 
-function getWeatherLabel(code){
-  const map = {
-    0: 'Clear sky',
-    1: 'Mainly clear',
-    2: 'Partly cloudy',
-    3: 'Overcast',
-    45: 'Fog',
-    48: 'Depositing rime fog',
-    51: 'Light drizzle',
-    53: 'Moderate drizzle',
-    55: 'Dense drizzle',
-    56: 'Freezing drizzle',
-    57: 'Dense freezing drizzle',
-    61: 'Slight rain',
-    63: 'Moderate rain',
-    65: 'Heavy rain',
-    80: 'Rain showers',
-    95: 'Thunderstorm'
-  };
+/* weather code -> label/icon */
+function weatherLabel(code){
+  const map = {0:'Clear',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Rime fog',51:'Light drizzle',53:'Moderate drizzle',55:'Dense drizzle',61:'Slight rain',63:'Moderate rain',65:'Heavy rain',80:'Showers',95:'Thunderstorm'};
   return map[code] || 'Weather';
 }
-function getWeatherSVG(code){
-  if (code === 0) return `<svg class="icon-use"><use href="#sun"></use></svg>`;
-  if (code === 1 || code === 2) return `<svg class="icon-use"><use href="#sun"></use></svg>`;
-  if (code === 3) return `<svg class="icon-use"><use href="#cloud"></use></svg>`;
-  if (code >= 45 && code <= 48) return `<svg class="icon-use"><use href="#fog"></use></svg>`;
-  if ((code >= 51 && code <= 57) || (code >= 61 && code <= 65) || (code >= 80 && code <= 82)) return `<svg class="icon-use"><use href="#rain"></use></svg>`;
-  if (code >= 95) return `<svg class="icon-use"><use href="#storm"></use></svg>`;
-  return `<svg class="icon-use"><use href="#sun"></use></svg>`;
+function svgForCode(code){
+  if (code === 0) return `<svg class="icon-use"><use href="#icon-sun"></use></svg>`;
+  if (code === 1 || code === 2) return `<svg class="icon-use"><use href="#icon-sun"></use></svg>`;
+  if (code === 3) return `<svg class="icon-use"><use href="#icon-cloud"></use></svg>`;
+  if (code >= 45 && code <= 48) return `<svg class="icon-use"><use href="#icon-fog"></use></svg>`;
+  if ((code >= 51 && code <= 57) || (code >= 61 && code <= 65) || (code >= 80 && code <= 82)) return `<svg class="icon-use"><use href="#icon-rain"></use></svg>`;
+  if (code >= 95) return `<svg class="icon-use"><use href="#icon-storm"></use></svg>`;
+  return `<svg class="icon-use"><use href="#icon-sun"></use></svg>`;
 }
-function setIconForCode(el, code){
-  el.innerHTML = getWeatherSVG(code);
-  // ensure svg gets accent fill
-  const svg = el.querySelector('svg');
-  if (svg) svg.classList.add('icon-use');
-}
+function setIcon(el, code){ el.innerHTML = svgForCode(code); const s = el.querySelector('svg'); if (s) s.classList.add('icon-use'); }
 
-// storage helpers
-function saveStateToStorage(){
-  try{ localStorage.setItem(LS_KEY, JSON.stringify(appState)); } catch(e){ console.warn('ls save failed', e); }
-}
-function loadStateFromStorage(){
-  try{
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      const s = JSON.parse(raw);
-      if (s.unit) appState.unit = s.unit;
-      if (s.timeFormat) appState.timeFormat = s.timeFormat;
-    }
-  }catch(e){ /* ignore */ }
-}
+function round(n){ return Math.round(n); }
 
-function loadStateFromStorage(){
-  try{
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      const s = JSON.parse(raw);
-      if (s.unit) appState.unit = s.unit;
-      if (s.timeFormat) appState.timeFormat = s.timeFormat;
-    }
-  }catch(e){}
-}
-
-// on load, restore last city and state
-window.addEventListener('load', () => {
-  // apply saved state to UI
-  document.querySelectorAll('.unit-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.unit === appState.unit);
-  });
-  document.querySelectorAll('.time-btn').forEach(b => {
-    b.classList.toggle('active', String(b.dataset.time) === String(appState.timeFormat));
-  });
-
-  const lastCity = localStorage.getItem(LS_CITY);
-  if (lastCity) {
-    cityInput.value = lastCity;
-    // fetch automatically
-    lookupAndRender(lastCity).catch(()=>{});
-  }
-});
+/* Done */
