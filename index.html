@@ -3,33 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>SkyAgent — Weather</title>
+  <title>SkyAgent — Weather + Pressure</title>
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
+  <!-- Leaflet for interactive maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Minimal inline SVG sprite for icons -->
-  <svg style="display:none" aria-hidden="true">
-    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></symbol>
-    <symbol id="icon-cloud" viewBox="0 0 24 24"><path d="M3 15a4 4 0 0 1 4-4h1.5A5.5 5.5 0 0 1 20 13.5 4 4 0 0 1 16 18H6a3 3 0 0 1-3-3z"/></symbol>
-    <symbol id="icon-rain" viewBox="0 0 24 24"><path d="M3 16c1-4 4-4 6-4h1"/><path d="M8 20v2M12 20v2M16 20v2"/></symbol>
-    <symbol id="icon-storm" viewBox="0 0 24 24"><path d="M13 2v6l3 1-8 8 1-5-4-1"/></symbol>
-    <symbol id="icon-fog" viewBox="0 0 24 24"><path d="M3 10h18M5 14h14M2 18h20"/></symbol>
-  </svg>
-
   <main class="app" id="app">
     <header class="topbar">
       <h1>SkyAgent</h1>
-
       <div class="controls">
         <form id="searchForm" class="search" autocomplete="off">
-          <input id="cityInput" placeholder="City (e.g. Beirut)" aria-label="City name" />
-          <button type="submit" aria-label="Search">Search</button>
+          <input id="cityInput" placeholder="City (e.g. Zahle, Lebanon)" aria-label="City name" />
+          <button type="submit">Search</button>
         </form>
-
         <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
       </div>
     </header>
@@ -37,10 +30,11 @@
     <div id="status" class="status">Type a city and press Search</div>
 
     <section class="grid">
+      <!-- Left column: current + forecast + pressure -->
       <div class="left-col">
         <article id="current" class="card current hidden" aria-live="polite">
           <div class="row">
-            <div class="icon" id="currentIcon" aria-hidden="true"><svg class="icon-use"><use href="#icon-sun"></use></svg></div>
+            <div class="icon" id="currentIcon" aria-hidden="true"><svg width="36" height="36"><use href="#icon-sun"></use></svg></div>
             <div class="details">
               <h2 id="currentCity">—</h2>
               <div class="temp" id="currentTemp">—°C</div>
@@ -51,27 +45,53 @@
             <div>Wind: <span id="currentWind">—</span></div>
             <div>Precip: <span id="currentPrecip">—</span></div>
             <div>Humidity: <span id="currentHum">—</span></div>
+            <div>Pressure: <strong id="currentPressure">—</strong> hPa</div>
           </div>
         </article>
 
         <section id="forecast" class="forecast hidden" aria-label="3 day forecast"></section>
+
+        <article class="card pressure-card hidden" id="pressureCard">
+          <h3>Pressure (hourly forecast)</h3>
+          <div class="chart-wrap small" style="height:160px;">
+            <canvas id="pressureChart"></canvas>
+          </div>
+        </article>
       </div>
 
+      <!-- Right column: temp+wind chart + interactive map -->
       <div class="right-col">
         <article class="card chart-card hidden" id="chartCard">
           <div class="chart-head">
-            <h3>Hourly</h3>
+            <h3>Hourly temperature & wind</h3>
             <div class="muted small" id="chartRange">—</div>
           </div>
-          <div class="chart-wrap">
-            <canvas id="hourlyChart" aria-label="Hourly temperature and wind chart"></canvas>
+          <div class="chart-wrap" style="height:260px;">
+            <canvas id="hourlyChart"></canvas>
+          </div>
+        </article>
+
+        <article class="card map-card" id="mapCard">
+          <div class="map-head">
+            <h3>Weather maps</h3>
+            <div class="muted small">Toggle overlays (requires provider tiles)</div>
+          </div>
+          <div id="map" style="height:300px;"></div>
+
+          <div class="map-controls">
+            <label><input type="checkbox" id="overlayPressure"> Pressure layer (tile)</label>
+            <label><input type="checkbox" id="overlayTemp"> Temperature layer (tile)</label>
+          </div>
+
+          <div class="muted small" id="mapNote">
+            Tip: To use overlay layers (pressure, fronts), add a tile provider URL in <code>app.js</code> (see MAP_TILE_* variables).
           </div>
         </article>
       </div>
     </section>
 
     <footer class="footer muted">
-      Data: Open-Meteo (no API key).
+      Data: Open-Meteo (point forecasts incl. pressure). Map tiles: set up a provider (OpenWeatherMap, MapTiler, etc.). :contentReference[oaicite:2]{index=2}
     </footer>
   </main>
 
@@ -79,7 +99,6 @@
   <div id="settingsOverlay" class="overlay hidden" role="dialog" aria-modal="true">
     <div class="overlay-card">
       <h3>Settings</h3>
-
       <div class="setting">
         <label>Temperature unit</label>
         <div class="btn-group">
@@ -102,6 +121,15 @@
       </div>
     </div>
   </div>
+
+  <!-- Minimal inline SVG icons -->
+  <svg style="display:none" aria-hidden="true">
+    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></symbol>
+    <symbol id="icon-cloud" viewBox="0 0 24 24"><path d="M3 15a4 4 0 0 1 4-4h1.5A5.5 5.5 0 0 1 20 13.5 4 4 0 0 1 16 18H6a3 3 0 0 1-3-3z"/></symbol>
+    <symbol id="icon-rain" viewBox="0 0 24 24"><path d="M3 16c1-4 4-4 6-4h1"/><path d="M8 20v2M12 20v2M16 20v2"/></symbol>
+    <symbol id="icon-storm" viewBox="0 0 24 24"><path d="M13 2v6l3 1-8 8 1-5-4-1"/></symbol>
+    <symbol id="icon-fog" viewBox="0 0 24 24"><path d="M3 10h18M5 14h14M2 18h20"/></symbol>
+  </svg>
 
   <script src="app.js" defer></script>
 </body>
