@@ -1,104 +1,137 @@
 // ----------------------------
-// SkyAgent - script.js
+// SkyAgent - Full Working App.js
 // ----------------------------
 
-// DOM elements
+// ----------------------------
+// DOM Elements
+// ----------------------------
 const cityInput = document.getElementById("cityInput");
 const searchButton = document.getElementById("searchButton");
-const currentTempEl = document.getElementById("currentTemp");
-const currentPressureEl = document.getElementById("currentPressure");
-const currentHumidityEl = document.getElementById("currentHumidity");
-const currentWindEl = document.getElementById("currentWind");
+
+const tempEl = document.getElementById("currentTemp");
+const pressureEl = document.getElementById("currentPressure");
+const humidityEl = document.getElementById("currentHumidity");
+const windEl = document.getElementById("currentWind");
+
 const forecastChartEl = document.getElementById("forecastChart");
+const pressureChartEl = document.getElementById("pressureChart");
+
 const mapContainerEl = document.getElementById("mapContainer");
 
-// Initialize charts
+// ----------------------------
+// Initialize Charts
+// ----------------------------
 let forecastChart;
-function initForecastChart() {
-  const ctx = forecastChartEl.getContext("2d");
-  forecastChart = new Chart(ctx, {
+let pressureChart;
+
+function initCharts() {
+  const ctxForecast = forecastChartEl.getContext("2d");
+  forecastChart = new Chart(ctxForecast, {
     type: "line",
     data: { labels: [], datasets: [] },
     options: {
       responsive: true,
-      plugins: { legend: { position: 'top' }, title: { display: true, text: 'Hourly Forecast' } },
+      plugins: { legend: { position: 'top' }, title: { display: true, text: 'Temperature Forecast' } },
+      scales: { y: { beginAtZero: false } }
+    }
+  });
+
+  const ctxPressure = pressureChartEl.getContext("2d");
+  pressureChart = new Chart(ctxPressure, {
+    type: "line",
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'top' }, title: { display: true, text: 'Pressure Forecast' } },
       scales: { y: { beginAtZero: false } }
     }
   });
 }
 
-// Initialize map (Leaflet)
+// ----------------------------
+// Initialize Map (Leaflet)
+// ----------------------------
 let map;
+let pressureLayer;
+let tempLayer;
+
 function initMap() {
-  map = L.map(mapContainerEl).setView([33.9, 35.5], 8); // default: Lebanon
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'Map data © OpenStreetMap contributors' }).addTo(map);
+  map = L.map(mapContainerEl).setView([33.9, 35.5], 8); // Lebanon default
 
-  // Layer placeholders
-  window.pressureLayer = L.tileLayer('', { opacity: 0.5 });
-  window.tempLayer = L.tileLayer('', { opacity: 0.5 });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data © OpenStreetMap contributors'
+  }).addTo(map);
+
+  pressureLayer = L.tileLayer('', { opacity: 0.5 }).addTo(map);
+  tempLayer = L.tileLayer('', { opacity: 0.5 }).addTo(map);
 }
 
-// Update map layers
 function updateMapLayers(tileURLs) {
-  if(tileURLs.pressure) {
-    pressureLayer.setUrl(tileURLs.pressure).addTo(map);
-  }
-  if(tileURLs.temperature) {
-    tempLayer.setUrl(tileURLs.temperature).addTo(map);
-  }
+  if (tileURLs.pressure) pressureLayer.setUrl(tileURLs.pressure);
+  if (tileURLs.temperature) tempLayer.setUrl(tileURLs.temperature);
 }
 
-// Event listener
-searchButton.addEventListener("click", () => {
-  const city = cityInput.value.trim();
-  if(city) fetchWeather(city);
-});
-
-// Fetch weather from Vercel API
+// ----------------------------
+// Fetch Weather from API (Vercel)
+// ----------------------------
 async function fetchWeather(city) {
+  if (!city) return;
+
   try {
     const res = await fetch(`/api/weather?city=${encodeURIComponent(city)}`);
     const data = await res.json();
 
-    if(!data || !data.current) {
-      alert("No data for this city");
+    if (!data || !data.current) {
+      alert("No weather data for this city");
       return;
     }
 
     // Update current weather
-    currentTempEl.textContent = `${data.current.temperature} °C`;
-    currentPressureEl.textContent = `${data.current.pressure} hPa`;
-    currentHumidityEl.textContent = `${data.current.humidity} %`;
-    currentWindEl.textContent = `${data.current.wind_speed} m/s`;
+    tempEl.textContent = `${data.current.temperature} °C`;
+    pressureEl.textContent = `${data.current.pressure} hPa`;
+    humidityEl.textContent = `${data.current.humidity} %`;
+    windEl.textContent = `${data.current.wind_speed} m/s`;
 
-    // Update forecast chart
-    updateForecastChart(data.forecast);
+    // Update charts
+    const labels = data.forecast.map(h => h.time);
+    const tempData = data.forecast.map(h => h.temperature);
+    const pressureData = data.forecast.map(h => h.pressure);
+
+    forecastChart.data.labels = labels;
+    forecastChart.data.datasets = [
+      { label: "Temperature (°C)", data: tempData, borderColor: "red", fill: false }
+    ];
+    forecastChart.update();
+
+    pressureChart.data.labels = labels;
+    pressureChart.data.datasets = [
+      { label: "Pressure (hPa)", data: pressureData, borderColor: "blue", fill: false }
+    ];
+    pressureChart.update();
 
     // Update map overlays
     updateMapLayers(data.tiles);
 
-  } catch(err) {
+  } catch (err) {
     console.error(err);
     alert("Error fetching weather data");
   }
 }
 
-// Update forecast chart
-function updateForecastChart(forecast) {
-  if(!forecastChart) initForecastChart();
+// ----------------------------
+// Event Listeners
+// ----------------------------
+searchButton.addEventListener("click", () => {
+  const city = cityInput.value.trim();
+  fetchWeather(city);
+});
 
-  const labels = forecast.map(h => h.time);
-  const tempData = forecast.map(h => h.temperature);
-  const pressureData = forecast.map(h => h.pressure);
+cityInput.addEventListener("keypress", e => {
+  if (e.key === "Enter") fetchWeather(cityInput.value.trim());
+});
 
-  forecastChart.data.labels = labels;
-  forecastChart.data.datasets = [
-    { label: "Temperature (°C)", data: tempData, borderColor: "red", fill: false },
-    { label: "Pressure (hPa)", data: pressureData, borderColor: "blue", fill: false }
-  ];
-  forecastChart.update();
-}
-
-// Initialize app
-initForecastChart();
+// ----------------------------
+// Initialize App
+// ----------------------------
+initCharts();
 initMap();
