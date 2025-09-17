@@ -5,54 +5,95 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SkyAgent Weather App</title>
 
-  <!-- Leaflet CSS for maps -->
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- Custom Styles -->
+  <!-- Custom CSS -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
     <header>
       <h1>SkyAgent Weather</h1>
-      <div class="search-bar">
-        <input type="text" id="cityInput" placeholder="Enter city name">
-        <button id="searchButton">Search</button>
-      </div>
+      <form id="searchForm" class="search-bar">
+        <input id="cityInput" type="text" placeholder="Enter city name">
+        <button type="submit">Search</button>
+      </form>
+      <div id="status" class="status">Enter a city to start.</div>
     </header>
 
     <main>
-      <section class="current-weather">
-        <h2>Current Weather</h2>
-        <div class="weather-info">
-          <div>Temperature: <span id="currentTemp">--</span></div>
-          <div>Pressure: <span id="currentPressure">--</span></div>
-          <div>Humidity: <span id="currentHumidity">--</span></div>
-          <div>Wind: <span id="currentWind">--</span></div>
+      <!-- Current Weather Card -->
+      <section id="current" class="card hidden">
+        <h2 id="currentCity">City, Country</h2>
+        <div class="current-info">
+          <div id="currentIcon" class="icon-large"></div>
+          <div>
+            <div id="currentTemp">--°C</div>
+            <div id="currentDesc">—</div>
+            <div>Wind: <span id="currentWind">—</span></div>
+            <div>Precip: <span id="currentPrecip">—</span></div>
+            <div>Humidity: <span id="currentHum">—</span></div>
+            <div>Pressure: <span id="currentPressure">—</span></div>
+          </div>
         </div>
       </section>
 
-      <section class="charts">
-        <h2>Forecast Charts</h2>
-        <canvas id="forecastChart"></canvas>
+      <!-- Forecast Cards -->
+      <section id="forecast" class="card hidden"></section>
+
+      <!-- Hourly Chart -->
+      <section id="chartCard" class="card hidden">
+        <h3>Hourly Forecast</h3>
+        <canvas id="hourlyChart"></canvas>
+        <div id="chartRange">—</div>
+      </section>
+
+      <!-- Pressure Chart -->
+      <section id="pressureCard" class="card hidden">
+        <h3>Pressure (hPa)</h3>
         <canvas id="pressureChart"></canvas>
       </section>
 
-      <section class="map-section">
-        <h2>Weather Maps</h2>
-        <div id="mapContainer" class="map"></div>
+      <!-- Map -->
+      <section class="card">
+        <h3>Weather Map</h3>
+        <div id="map" class="map"></div>
+        <div class="map-controls">
+          <label><input type="checkbox" id="overlayPressure"> Pressure Layer</label>
+          <label><input type="checkbox" id="overlayTemp"> Temperature Layer</label>
+        </div>
       </section>
     </main>
+
+    <!-- Settings Overlay -->
+    <div id="settingsOverlay" class="overlay hidden">
+      <h3>Settings</h3>
+      <div class="settings-section">
+        <span>Temperature Unit:</span>
+        <button class="unit-btn" data-unit="C">°C</button>
+        <button class="unit-btn" data-unit="F">°F</button>
+      </div>
+      <div class="settings-section">
+        <span>Time Format:</span>
+        <button class="time-btn" data-time="24">24h</button>
+        <button class="time-btn" data-time="12">12h</button>
+      </div>
+      <button id="saveSettings">Save</button>
+      <button id="closeSettings">Close</button>
+    </div>
+
+    <button id="settingsBtn" class="settings-btn">Settings</button>
 
     <footer>
       <p>SkyAgent Weather App &copy; 2025</p>
     </footer>
   </div>
 
-  <!-- Leaflet JS for maps -->
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
   <!-- App Script -->
