@@ -1,8 +1,6 @@
 # SkyAgent Weather App
 https://carlosziade.github.io/SkyAgent/
 
-A simple weather app using the free [Open-Meteo API](https://open-meteo.com/).
-
 ## Features
 - Search by city name
 - 3-day weather forecast (max/min temperature, precipitation, weather code)
