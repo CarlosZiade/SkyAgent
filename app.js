@@ -1,212 +1,204 @@
-// SkyAgent - Weather App
-// Vanilla JS version with charts, forecast & map
+// app.js — SkyAgent frontend (vanilla JS)
+// Fetches weather data from /api/weather and renders charts + UI
+// Works with Vercel serverless API (Meteomatics backend)
 
-const API_BASE = "https://api.open-meteo.com/v1/forecast";
+const DOM = {
+  searchForm: document.getElementById("searchForm"),
+  cityInput: document.getElementById("cityInput"),
+  status: document.getElementById("status"),
+  currentCard: document.getElementById("current"),
+  currentCity: document.getElementById("currentCity"),
+  currentTemp: document.getElementById("currentTemp"),
+  currentDesc: document.getElementById("currentDesc"),
+  currentIcon: document.getElementById("currentIcon"),
+  currentWind: document.getElementById("currentWind"),
+  currentPrecip: document.getElementById("currentPrecip"),
+  currentHum: document.getElementById("currentHum"),
+  currentPressure: document.getElementById("currentPressure"),
+  forecast: document.getElementById("forecast"),
+  chartCard: document.getElementById("chartCard"),
+  hourlyCanvas: document.getElementById("hourlyChart"),
+  chartRange: document.getElementById("chartRange"),
+  pressureCard: document.getElementById("pressureCard"),
+  pressureCanvas: document.getElementById("pressureChart"),
+};
 
-// Elements
-const searchForm = document.getElementById("searchForm");
-const cityInput = document.getElementById("cityInput");
-const statusEl = document.getElementById("status");
+const LS_LASTCITY = "skyagent_lastcity_v4";
+let chartInstance = null;
+let pressureChart = null;
+let appState = { unit: "C", timeFormat: 24 };
 
-const currentEl = document.getElementById("current");
-const currentCityEl = document.getElementById("currentCity");
-const currentTempEl = document.getElementById("currentTemp");
-const currentDescEl = document.getElementById("currentDesc");
-const currentIconEl = document.getElementById("currentIcon");
-const currentWindEl = document.getElementById("currentWind");
-const currentPrecipEl = document.getElementById("currentPrecip");
-const currentHumEl = document.getElementById("currentHum");
-const currentPressureEl = document.getElementById("currentPressure");
+// Initialize app
+init();
 
-const forecastEl = document.getElementById("forecast");
-const chartCardEl = document.getElementById("chartCard");
-const chartRangeEl = document.getElementById("chartRange");
-const pressureCardEl = document.getElementById("pressureCard");
+function init() {
+  wireUI();
+  const last = localStorage.getItem(LS_LASTCITY);
+  if (last) {
+    DOM.cityInput.value = last;
+    lookupAndRender(last);
+  } else {
+    lookupAndRender("Zahle");
+  }
+}
 
-let hourlyChart, pressureChart;
-let map;
-
-// Entry
-document.addEventListener("DOMContentLoaded", () => {
-  initMap();
-
-  searchForm.addEventListener("submit", async (e) => {
+function wireUI() {
+  DOM.searchForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const city = cityInput.value.trim();
-    if (city) {
-      fetchWeatherByCity(city);
-    }
+    const q = DOM.cityInput.value.trim();
+    if (!q) return showStatus("Please enter a city name.");
+    await lookupAndRender(q);
   });
+}
 
-  // Load default
-  fetchWeatherByCity("Zahle, Lebanon");
-});
-
-// ---- Weather fetching ----
-async function fetchWeatherByCity(cityName) {
-  statusEl.textContent = "Loading weather...";
+async function lookupAndRender(query) {
   try {
-    // 1) Get lat/lon for city
-    const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1`);
-    const geo = await geoRes.json();
-    if (!geo.results || !geo.results.length) throw new Error("City not found");
-    const { latitude, longitude, name, country } = geo.results[0];
+    showStatus("Fetching data…");
+    hideAll();
+    const r = await fetch(`/api/weather?q=${encodeURIComponent(query)}`);
+    if (!r.ok) throw new Error("API request failed");
+    const data = await r.json();
+    localStorage.setItem(LS_LASTCITY, query);
 
-    // 2) Get weather forecast
-    const params = new URLSearchParams({
-      latitude,
-      longitude,
-      current_weather: "true",
-      hourly: "temperature_2m,relative_humidity_2m,precipitation,pressure_msl,windspeed_10m",
-      daily: "temperature_2m_max,temperature_2m_min,precipitation_sum",
-      timezone: "auto"
-    });
+    renderCurrent(data.place, data.current);
+    renderForecast(data.daily);
+    renderHourlyChart(data.hourly);
+    renderPressureChart(data.hourly);
 
-    const res = await fetch(`${API_BASE}?${params.toString()}`);
-    const data = await res.json();
-
-    updateUI(name, country, data, latitude, longitude);
-    statusEl.textContent = "Latest forecast shown";
+    showStatus("Weather updated.");
   } catch (err) {
     console.error(err);
-    statusEl.textContent = "Error fetching weather data";
+    showStatus("Unable to fetch weather data.", true);
   }
 }
 
-// ---- UI Updates ----
-function updateUI(city, country, data, lat, lon) {
-  const current = data.current_weather;
-  const hourly = data.hourly;
-  const daily = data.daily;
-
-  // Current
-  currentCityEl.textContent = `${city}, ${country}`;
-  currentTempEl.textContent = `${Math.round(current.temperature)}°C`;
-  currentDescEl.textContent = getWeatherDesc(current.weathercode);
-  currentWindEl.textContent = `${current.windspeed} m/s`;
-  currentPrecipEl.textContent = `${hourly.precipitation[0]} mm`;
-  currentHumEl.textContent = `${hourly.relative_humidity_2m[0]}%`;
-  currentPressureEl.textContent = `${Math.round(hourly.pressure_msl[0])}`;
-  currentIconEl.innerHTML = svgForCode(current.weathercode);
-  currentEl.classList.remove("hidden");
-
-  // Forecast
-  forecastEl.innerHTML = "";
-  for (let i = 0; i < 3; i++) {
-    const day = new Date(daily.time[i]).toLocaleDateString(undefined, { weekday: "short" });
-    const max = Math.round(daily.temperature_2m_max[i]);
-    const min = Math.round(daily.temperature_2m_min[i]);
-    const precip = daily.precipitation_sum[i];
-    forecastEl.insertAdjacentHTML("beforeend", `
-      <div class="fcard">
-        <div class="day">${day}</div>
-        <div class="t">${max}°C / ${min}°C</div>
-        <div class="muted small">Precip: ${precip} mm</div>
-      </div>
-    `);
-  }
-  forecastEl.classList.remove("hidden");
-
-  // Charts
-  updateHourlyChart(hourly);
-  updatePressureChart(hourly);
-
-  // Map
-  if (map) {
-    map.setView([lat, lon], 8);
-  }
+function renderCurrent(place, current) {
+  DOM.currentCity.textContent = `${place.name}, ${place.country}`;
+  DOM.currentTemp.textContent = `${Math.round(convertTemp(current.temperature))}°${appState.unit}`;
+  DOM.currentDesc.textContent = current.weather_label || "—";
+  setIcon(DOM.currentIcon, current.weather_code);
+  DOM.currentWind.textContent = `${Math.round(current.windspeed)} m/s`;
+  DOM.currentPrecip.textContent = `${current.precip ?? "—"} mm`;
+  DOM.currentHum.textContent = `${current.humidity ?? "—"}%`;
+  DOM.currentPressure.textContent = `${Math.round(current.pressure)} hPa`;
+  DOM.currentCard.classList.remove("hidden");
 }
 
-// ---- Charts ----
-function updateHourlyChart(hourly) {
-  const labels = hourly.time.map(t => new Date(t).getHours());
-  const temps = hourly.temperature_2m;
-  const winds = hourly.windspeed_10m;
+function renderForecast(daily) {
+  DOM.forecast.innerHTML = "";
+  if (!daily || !daily.time) return;
+  for (let i = 0; i < Math.min(daily.time.length, 3); i++) {
+    const date = new Date(daily.time[i]);
+    const dayName = date.toLocaleDateString(undefined, { weekday: "short" });
+    const tmax = daily.temperature_2m_max[i];
+    const tmin = daily.temperature_2m_min[i];
+    const code = daily.weathercode ? daily.weathercode[i] : 0;
 
-  if (hourlyChart) hourlyChart.destroy();
-  const ctx = document.getElementById("hourlyChart");
-  hourlyChart = new Chart(ctx, {
+    const card = document.createElement("div");
+    card.className = "fcard";
+    card.innerHTML = `
+      <div class="day">${dayName}</div>
+      <div class="icon small">${svgForCode(code)}</div>
+      <div class="t">${Math.round(convertTemp(tmax))}° / ${Math.round(convertTemp(tmin))}°</div>
+    `;
+    DOM.forecast.appendChild(card);
+  }
+  DOM.forecast.classList.remove("hidden");
+}
+
+function renderHourlyChart(hourly) {
+  if (!hourly.time || !hourly.temperature_2m) return;
+
+  const times = hourly.time.slice(0, 48);
+  const temps = hourly.temperature_2m.slice(0, 48);
+  const winds = hourly.windspeed_10m.slice(0, 48);
+
+  const labels = times.map((t) => new Date(t).toLocaleTimeString([], { hour: "2-digit" }));
+  if (chartInstance) chartInstance.destroy();
+
+  const ctx = DOM.hourlyCanvas.getContext("2d");
+  chartInstance = new Chart(ctx, {
     type: "line",
     data: {
       labels,
       datasets: [
         {
-          label: "Temperature (°C)",
-          data: temps,
-          borderColor: "#7cc4ff",
-          tension: 0.4
+          label: `Temperature (°${appState.unit})`,
+          data: temps.map(convertTemp),
+          borderColor: "rgba(124,196,255,1)",
+          backgroundColor: "rgba(124,196,255,0.2)",
+          tension: 0.3,
+          fill: true,
+          pointRadius: 2,
         },
         {
           label: "Wind (m/s)",
           data: winds,
-          borderColor: "#999",
+          borderColor: "rgba(200,200,200,0.9)",
           borderDash: [5, 5],
-          yAxisID: "y2",
-          tension: 0.4
-        }
-      ]
+          fill: false,
+          pointRadius: 0,
+        },
+      ],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        y: { beginAtZero: false },
-        y2: { position: "right", beginAtZero: true }
-      }
-    }
+    options: { responsive: true, maintainAspectRatio: false },
   });
-  chartCardEl.classList.remove("hidden");
+  DOM.chartCard.classList.remove("hidden");
 }
 
-function updatePressureChart(hourly) {
-  const labels = hourly.time.map(t => new Date(t).getHours());
-  const pressures = hourly.pressure_msl;
-
+function renderPressureChart(hourly) {
+  if (!hourly.time || !hourly.pressure_msl) return;
+  const times = hourly.time.slice(0, 48);
+  const pressures = hourly.pressure_msl.slice(0, 48);
   if (pressureChart) pressureChart.destroy();
-  const ctx = document.getElementById("pressureChart");
+
+  const ctx = DOM.pressureCanvas.getContext("2d");
   pressureChart = new Chart(ctx, {
     type: "line",
     data: {
-      labels,
-      datasets: [{
-        label: "Pressure (hPa)",
-        data: pressures,
-        borderColor: "#ccc",
-        tension: 0.3,
-        fill: false
-      }]
+      labels: times.map((t) => new Date(t).toLocaleTimeString([], { hour: "2-digit" })),
+      datasets: [
+        {
+          label: "Pressure (hPa)",
+          data: pressures,
+          borderColor: "rgba(200,200,200,0.9)",
+          backgroundColor: "rgba(200,200,200,0.05)",
+          tension: 0.3,
+          fill: true,
+          pointRadius: 1,
+        },
+      ],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: { y: { beginAtZero: false } }
-    }
+    options: { responsive: true, maintainAspectRatio: false },
   });
-  pressureCardEl.classList.remove("hidden");
+  DOM.pressureCard.classList.remove("hidden");
 }
 
-// ---- Map ----
-function initMap() {
-  map = L.map("map").setView([33.9, 35.9], 8);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-}
-
-// ---- Utilities ----
-function getWeatherDesc(code) {
-  const lookup = {
-    0: "Clear", 1: "Mainly clear", 2: "Partly cloudy", 3: "Cloudy",
-    45: "Fog", 48: "Rime fog", 51: "Light drizzle", 61: "Light rain",
-    71: "Snow fall", 80: "Rain showers", 95: "Thunderstorm"
-  };
-  return lookup[code] || "Weather";
+function convertTemp(c) {
+  return appState.unit === "C" ? c : (c * 9) / 5 + 32;
 }
 
 function svgForCode(code) {
-  if ([0, 1].includes(code)) return `<svg><use href="#icon-sun"/></svg>`;
-  if ([2, 3].includes(code)) return `<svg><use href="#icon-cloud"/></svg>`;
-  if ([61, 80].includes(code)) return `<svg><use href="#icon-rain"/></svg>`;
-  if ([95].includes(code)) return `<svg><use href="#icon-storm"/></svg>`;
-  return `<svg><use href="#icon-fog"/></svg>`;
+  if (code === 0) return `<svg><use href="#icon-sun"/></svg>`;
+  if (code <= 3) return `<svg><use href="#icon-cloud"/></svg>`;
+  if (code >= 45 && code <= 48) return `<svg><use href="#icon-fog"/></svg>`;
+  if (code >= 51) return `<svg><use href="#icon-rain"/></svg>`;
+  if (code >= 95) return `<svg><use href="#icon-storm"/></svg>`;
+  return `<svg><use href="#icon-sun"/></svg>`;
+}
+
+function setIcon(el, code) {
+  el.innerHTML = svgForCode(code);
+}
+
+function hideAll() {
+  DOM.currentCard.classList.add("hidden");
+  DOM.forecast.classList.add("hidden");
+  DOM.chartCard.classList.add("hidden");
+  DOM.pressureCard.classList.add("hidden");
+}
+
+function showStatus(msg, isError = false) {
+  DOM.status.textContent = msg;
+  DOM.status.style.color = isError ? "#ffb4b4" : "";
 }
