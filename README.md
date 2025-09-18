@@ -14,6 +14,4 @@ https://carlosziade.github.io/SkyAgent/
 This app is deployed on GitHub Pages.  
 To publish, enable GitHub Pages in the repository settings and select the main branch.
 
-## API Reference
 
-- [Open-Meteo API Documentation](https://open-meteo.com/en/docs)
